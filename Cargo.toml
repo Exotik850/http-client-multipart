@@ -1,0 +1,15 @@
+[package]
+name = "http-client-multipart"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-fs = "2.1.2"
+fastrand = "2.3.0"
+futures-lite = "2.6.0"
+http-types = "2.12.0"
+mime_guess = "2.0.5"
+
+[dev-dependencies]
+async-std = { version = "1.13.1", default-features = false, features = ["attributes"] }
+http-client = { version = "6.5.3", features = ["h1_client"] }

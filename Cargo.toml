@@ -2,6 +2,8 @@
 name = "http-client-multipart"
 version = "0.1.0"
 edition = "2021"
+description = "Multipart support for `http-client`"
+license = "MIT"
 
 [dependencies]
 async-fs = "2.1.2"

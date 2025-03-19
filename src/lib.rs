@@ -48,13 +48,14 @@
 //! # Ok(())
 //! # }
 //! ```
+use async_fs::File as AsyncFile;
+use base64::Engine;
 use futures_lite::io::BufReader;
+use futures_lite::AsyncBufRead;
 use http_types::{Body, Request, Result};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::Path;
-use async_fs::File as AsyncFile;
-use futures_lite::{AsyncBufRead};
 
 /// A struct representing a multipart form.
 #[derive(Debug)]
@@ -73,8 +74,28 @@ enum Field {
         name: String,
         filename: String,
         content_type: String,
+        encoding: Option<ContentTransferEncoding>,
         data: Body,
     },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ContentTransferEncoding {
+    SevenBit,
+    EightBit,
+    Base64,
+    QuotedPrintable,
+}
+
+impl ContentTransferEncoding {
+    fn to_str(&self) -> &'static str {
+        match self {
+            ContentTransferEncoding::SevenBit => "7bit",
+            ContentTransferEncoding::EightBit => "8bit",
+            ContentTransferEncoding::Base64 => "base64",
+            ContentTransferEncoding::QuotedPrintable => "quoted-printable",
+        }
+    }
 }
 
 impl Default for Multipart {
@@ -105,6 +126,7 @@ impl Multipart {
         &mut self,
         name: impl Into<String>,
         path: impl AsRef<Path>,
+        encoding: Option<ContentTransferEncoding>,
     ) -> Result<()> {
         let path = path.as_ref();
         let filename = path
@@ -119,7 +141,7 @@ impl Multipart {
 
         let file = AsyncFile::open(path).await?;
         let buf_reader = BufReader::new(file);
-        self.add_async_read(name, filename, content_type, buf_reader)
+        self.add_async_read(name, filename, content_type, encoding, buf_reader)
     }
 
     /// Adds a file field to the form wrapping a async reader.
@@ -128,6 +150,7 @@ impl Multipart {
         name: impl Into<String>,
         filename: impl Into<String>,
         content_type: impl Into<String>,
+        encoding: Option<ContentTransferEncoding>,
         data: impl AsyncBufRead + Unpin + Send + Sync + 'static,
     ) -> Result<()> {
         let body = Body::from_reader(data, None);
@@ -135,6 +158,7 @@ impl Multipart {
             name: name.into(),
             filename: filename.into(),
             content_type: content_type.into(),
+            encoding,
             data: body,
         });
         Ok(())
@@ -146,6 +170,7 @@ impl Multipart {
         name: impl Into<String>,
         filename: impl Into<String>,
         content_type: impl Into<String>,
+        encoding: Option<ContentTransferEncoding>,
         mut data: impl Read + Seek + Send + 'static,
     ) -> Result<()> {
         let mut buffer = Vec::new();
@@ -155,6 +180,7 @@ impl Multipart {
             name: name.into(),
             filename: filename.into(),
             content_type: content_type.into(),
+            encoding,
             data: body,
         });
         Ok(())
@@ -166,9 +192,10 @@ impl Multipart {
         name: impl Into<String>,
         filename: impl Into<String>,
         content_type: impl Into<String>,
+        encoding: Option<ContentTransferEncoding>,
         file: File,
     ) -> Result<()> {
-        self.add_sync_read(name, filename, content_type, file)
+        self.add_sync_read(name, filename, content_type, encoding, file)
     }
 
     /// Sets the request body to the multipart form data.
@@ -201,6 +228,7 @@ impl Multipart {
                     name,
                     filename,
                     content_type,
+                    encoding,
                     data: d,
                 } => {
                     data.extend_from_slice(b"--");
@@ -216,8 +244,27 @@ impl Multipart {
                     data.extend_from_slice(
                         format!("Content-Type: {}\r\n", content_type).as_bytes(),
                     );
+                    if let Some(enc) = encoding {
+                        data.extend_from_slice(
+                            format!("Content-Transfer-Encoding: {}\r\n", enc.to_str()).as_bytes(),
+                        );
+                    }
                     data.extend_from_slice(b"\r\n");
-                    let b = d.into_bytes().await?;
+                    let mut b = d.into_bytes().await?;
+                    if let Some(enc) = encoding {
+                        match enc {
+                            ContentTransferEncoding::Base64 => {
+                                // b = base64::encode(&b).into_bytes();
+                                b = base64::engine::general_purpose::STANDARD_NO_PAD
+                                    .encode(b)
+                                    .into_bytes();
+                            }
+                            ContentTransferEncoding::QuotedPrintable => {
+                                b = quoted_printable::encode(&b);
+                            }
+                            _ => {}
+                        }
+                    }
                     data.extend(b);
                     data.extend_from_slice(b"\r\n");
                 }
@@ -235,11 +282,7 @@ impl Multipart {
 
 /// Generates a random boundary string.
 fn generate_boundary() -> String {
-    let mut out = String::new();
-    for _ in 0..30 {
-        out.push(fastrand::alphanumeric());
-    }
-    out
+    (0..30).map(|_| fastrand::alphanumeric()).collect()
 }
 
 // Extension trait for adding multipart functionality.
@@ -285,7 +328,7 @@ mod tests {
     #[async_std::test]
     async fn test_multipart_file() -> Result<()> {
         let mut multipart = Multipart::new();
-        multipart.add_file("avatar", "Cargo.toml").await?;
+        multipart.add_file("avatar", "Cargo.toml", None).await?;
 
         let mut req = Request::new(Method::Post, Url::parse("http://example.com")?);
         multipart.set_request(&mut req).await?;
@@ -302,7 +345,7 @@ mod tests {
     async fn test_multipart_mixed() -> Result<()> {
         let mut multipart = Multipart::new();
         multipart.add_text("name", "John Doe");
-        multipart.add_file("avatar", "Cargo.toml").await?;
+        multipart.add_file("avatar", "Cargo.toml", None).await?;
 
         let mut req = Request::new(Method::Post, Url::parse("http://example.com")?);
         multipart.set_request(&mut req).await?;
@@ -316,7 +359,6 @@ mod tests {
         Ok(())
     }
 
-
     #[async_std::test]
     async fn example_test() -> Result<()> {
         use http_client::h1::H1Client as Client;
@@ -329,7 +371,7 @@ mod tests {
         multipart.add_text("name", "John Doe");
 
         // Add a file.
-        multipart.add_file("avatar", "Cargo.toml").await?;
+        multipart.add_file("avatar", "Cargo.toml", None).await?;
 
         // Create a request.
         let url = "https://httpbin.org/post".parse::<Url>()?;

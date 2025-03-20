@@ -48,20 +48,13 @@
 //! # Ok(())
 //! # }
 //! ```
-use async_fs::File as AsyncFile;
-use base64::Engine;
-use futures_lite::io::BufReader;
-use futures_lite::AsyncBufRead;
-use http_types::{Body, Request, Result};
-use multipart::Multipart;
-use part::{ContentTransferEncoding, Part};
-use std::borrow::Cow;
-use std::fs::File;
-use std::io::{Read, Seek};
-use std::path::Path;
+use http_types::{Request, Result};
 
 mod multipart;
 mod part;
+
+pub use multipart::Multipart;
+pub use part::{ContentTransferEncoding, Part};
 
 /// Generates a random boundary string.
 fn generate_boundary() -> String {

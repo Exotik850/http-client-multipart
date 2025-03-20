@@ -56,6 +56,8 @@ mod part;
 pub use multipart::Multipart;
 pub use part::{ContentTransferEncoding, Part};
 
+pub type StreamChunk = std::result::Result<Vec<u8>, futures_lite::io::Error>;
+
 /// Generates a random boundary string.
 fn generate_boundary() -> String {
     (0..30).map(|_| fastrand::alphanumeric()).collect()

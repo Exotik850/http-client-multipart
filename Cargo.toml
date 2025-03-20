@@ -7,12 +7,16 @@ license = "MIT"
 
 [dependencies]
 async-fs = "2.1.2"
-base64 = "0.22.1"
-bytes = "1.10.1"
-fastrand = "2.3.0"
-futures-lite = "2.6.0"
+
+# Async 
 http-types = "2.12.0"
-mime_guess = "2.0.5"
+futures-lite = "2.6.0"
+
+# Boundary generation
+fastrand = "2.3.0"
+
+# Encodings
+base64 = "0.22.1"
 quoted_printable = "0.5.1"
 
 [dev-dependencies]

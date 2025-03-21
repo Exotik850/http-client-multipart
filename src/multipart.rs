@@ -68,10 +68,6 @@ impl<'m> Multipart<'m> {
         Ok(())
     }
 
-    fn add_part(&mut self, part: Part<'m>) {
-        self.fields.push(part);
-    }
-
     /// Adds a file field to the form wrapping a sync reader.
     pub fn add_sync_read(
         &mut self,

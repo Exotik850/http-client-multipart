@@ -27,39 +27,10 @@ struct FileData<'p> {
 }
 
 impl<'p> Part<'p> {
-    /// Returns the name of the part.
-    pub(crate) fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Returns whether the part is a text field.
-    pub(crate) fn is_text(&self) -> bool {
-        self.file_data.is_none()
-    }
-
-    /// Returns whether the part is a file field.
-    pub(crate) fn is_file(&self) -> bool {
-        self.file_data.is_some()
-    }
-
     /// Returns the filename of the part.
     /// Only applicable to file parts.
     pub(crate) fn filename(&self) -> Option<&str> {
         self.file_data.as_ref().map(|data| data.filename.as_ref())
-    }
-
-    /// Returns the value of the part.
-    /// This reads the entire part into memory,
-    /// so it is not recommended for large files.
-    pub(crate) async fn value(self) -> Result<Vec<u8>, http_types::Error> {
-        self.data.into_bytes().await
-    }
-
-    /// Returns the content type of the part.
-    /// Both text and file parts have a content type.
-    /// Text parts have a default content type of `text/plain`.
-    pub(crate) fn content_type(&self) -> &Mime {
-        &self.content_type
     }
 
     /// Returns the encoding of the part.

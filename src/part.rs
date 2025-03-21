@@ -13,7 +13,7 @@ use crate::{reader_stream::ReaderStream, Encoding, StreamChunk};
 
 /// Represents a single field in a multipart form.
 #[derive(Debug)]
-pub struct Part<'p> {
+pub(crate) struct Part<'p> {
     name: Cow<'p, str>,
     data: Body,
     content_type: Mime,
@@ -21,50 +21,50 @@ pub struct Part<'p> {
 }
 
 #[derive(Debug)]
-pub struct FileData<'p> {
+struct FileData<'p> {
     filename: Cow<'p, str>,
     encoding: Option<Encoding>,
 }
 
 impl<'p> Part<'p> {
     /// Returns the name of the part.
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         &self.name
     }
 
     /// Returns whether the part is a text field.
-    pub fn is_text(&self) -> bool {
+    pub(crate) fn is_text(&self) -> bool {
         self.file_data.is_none()
     }
 
     /// Returns whether the part is a file field.
-    pub fn is_file(&self) -> bool {
+    pub(crate) fn is_file(&self) -> bool {
         self.file_data.is_some()
     }
 
     /// Returns the filename of the part.
     /// Only applicable to file parts.
-    pub fn filename(&self) -> Option<&str> {
+    pub(crate) fn filename(&self) -> Option<&str> {
         self.file_data.as_ref().map(|data| data.filename.as_ref())
     }
 
     /// Returns the value of the part.
     /// This reads the entire part into memory,
     /// so it is not recommended for large files.
-    pub async fn value(self) -> Result<Vec<u8>, http_types::Error> {
+    pub(crate) async fn value(self) -> Result<Vec<u8>, http_types::Error> {
         self.data.into_bytes().await
     }
 
     /// Returns the content type of the part.
     /// Both text and file parts have a content type.
     /// Text parts have a default content type of `text/plain`.
-    pub fn content_type(&self) -> &Mime {
+    pub(crate) fn content_type(&self) -> &Mime {
         &self.content_type
     }
 
     /// Returns the encoding of the part.
     /// Only applicable to file parts.
-    pub fn encoding(&self) -> Option<Encoding> {
+    pub(crate) fn encoding(&self) -> Option<Encoding> {
         self.file_data.as_ref().and_then(|data| data.encoding)
     }
 
@@ -74,7 +74,7 @@ impl<'p> Part<'p> {
     /// This also streams text values as bytes.
     ///
     /// Remember to place the boundary between parts when using this stream.
-    pub fn into_stream(self) -> impl Stream<Item = StreamChunk> {
+    pub(crate) fn into_stream(self) -> impl Stream<Item = StreamChunk> {
         let header = self.header_bytes();
         let header_stream = futures_lite::stream::once(Ok(header));
         let buf_size = self.data.len();
@@ -84,7 +84,7 @@ impl<'p> Part<'p> {
     }
 
     /// Creates a new text part.
-    pub fn text(name: impl Into<Cow<'p, str>>, value: &str) -> Self {
+    pub(crate) fn text(name: impl Into<Cow<'p, str>>, value: &str) -> Self {
         Part {
             name: name.into(),
             data: Body::from(value),
@@ -94,7 +94,7 @@ impl<'p> Part<'p> {
     }
 
     /// Creates a new file part.
-    pub fn file_raw(
+    pub(crate) fn file_raw(
         name: impl Into<Cow<'p, str>>,
         filename: impl Into<Cow<'p, str>>,
         content_type: Mime,
@@ -113,7 +113,7 @@ impl<'p> Part<'p> {
     }
 
     /// Creates a new file part from a reader.
-    pub fn file_raw_async(
+    pub(crate) fn file_raw_async(
         name: impl Into<Cow<'p, str>>,
         filename: impl Into<Cow<'p, str>>,
         content_type: Mime,
@@ -138,7 +138,7 @@ impl<'p> Part<'p> {
     ///
     /// This tries to set the content type based on the file extension,
     /// falling back to `application/octet-stream` if the extension is not recognized.
-    pub async fn file_async(
+    pub(crate) async fn file_async(
         name: impl Into<Cow<'p, str>>,
         path: impl AsRef<Path>,
         encoding: Option<Encoding>,
@@ -205,7 +205,7 @@ impl<'p> Part<'p> {
     }
 
     /// Extends the data of the part into a buffer.
-    pub async fn extend(self, mut data: &mut [u8]) -> Result<(), futures_lite::io::Error> {
+    pub(crate) async fn extend(self, mut data: &mut [u8]) -> Result<(), futures_lite::io::Error> {
         self.write_header(&mut data)?;
         let mut stream = self.into_stream();
         while let Some(chunk) = stream.next().await {

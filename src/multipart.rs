@@ -1,4 +1,4 @@
-use crate::{generate_boundary, Encoding, Part, StreamChunk};
+use crate::{generate_boundary, part::Part, Encoding, StreamChunk};
 use futures_lite::{AsyncBufRead, Stream, StreamExt};
 use http_types::{Body, Request, Result};
 use std::{

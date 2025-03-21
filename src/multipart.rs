@@ -1,4 +1,4 @@
-use crate::{generate_boundary, Encoding, Part, StreamChunk};
+use crate::{generate_boundary, part::Part, Encoding, StreamChunk};
 use futures_lite::{AsyncBufRead, Stream, StreamExt};
 use http_types::{Body, Request, Result};
 use std::{
@@ -68,7 +68,7 @@ impl<'m> Multipart<'m> {
         Ok(())
     }
 
-    pub fn add_part(&mut self, part: Part<'m>) {
+    fn add_part(&mut self, part: Part<'m>) {
         self.fields.push(part);
     }
 

@@ -8,13 +8,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     multipart.add_text("field1", "value1");
     multipart.add_text("field2", "value2");
 
-    multipart.add_file("file_1", "./examples/file.txt", None).await?;
     multipart
-        .add_file(
-            "file_2",
-            "./LICENSE.md",
-            Some(Encoding::Base64),
-        )
+        .add_file("file_1", "./examples/file.txt", None)
+        .await?;
+    multipart
+        .add_file("file_2", "./LICENSE.md", Some(Encoding::Base64))
         .await?;
 
     let mut stream = multipart.into_stream();

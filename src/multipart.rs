@@ -1,10 +1,6 @@
-use crate::{
-    generate_boundary,
-    part::{Encoding, Part},
-    StreamChunk,
-};
+use crate::{generate_boundary, Encoding, Part, StreamChunk};
 use futures_lite::{AsyncBufRead, Stream, StreamExt};
-use http_types::{Body, Mime, Request, Result};
+use http_types::{Body, Request, Result};
 use std::{
     borrow::Cow,
     io::{Read, Seek},

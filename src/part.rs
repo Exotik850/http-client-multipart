@@ -2,19 +2,14 @@ use std::{
     borrow::Cow,
     io::Write,
     path::Path,
-    pin::Pin,
-    task::{Context, Poll},
 };
 
 use async_fs::File as AsyncFile;
-use base64::Engine;
-use futures_lite::{io::BufReader, AsyncBufRead, AsyncRead, AsyncWrite, Stream, StreamExt};
-use http_types::{Body};
+use futures_lite::{io::BufReader, AsyncBufRead, Stream, StreamExt};
+use http_types::Body;
 use mime_guess::Mime;
 
-use crate::StreamChunk;
-
-const CHUNK_SIZE: usize = 1024;
+use crate::{reader_stream::ReaderStream, Encoding, StreamChunk};
 
 /// Represents a single field in a multipart form.
 #[derive(Debug)]
@@ -173,7 +168,7 @@ impl<'p> Part<'p> {
             len += 15 + filename.len(); // 15 = "; filename=\"\"".len()
         }
         len += 2; // CRLF after Content-Disposition line
-        // "Content-Type: [content_type]" line
+                  // "Content-Type: [content_type]" line
         len += 14 + self.content_type.essence_str().len(); // 14 = "Content-Type: ".len()
         len += 2; // CRLF after Content-Type
         if let Some(encoding) = self.encoding() {
@@ -204,7 +199,8 @@ impl<'p> Part<'p> {
 
     fn header_bytes(&self) -> Vec<u8> {
         let mut header = Vec::with_capacity(self.header_len());
-        self.write_header(&mut header).expect("Failed to write header");
+        self.write_header(&mut header)
+            .expect("Failed to write header");
         header
     }
 
@@ -232,74 +228,4 @@ fn filename(path: &Path) -> String {
 /// Returns `None` if the extension is not recognized.
 fn content_type(path: &Path) -> Option<Mime> {
     mime_guess::from_path(path).first()
-}
-
-struct ReaderStream<R> {
-    reader: R,
-    buf_size: usize,
-    encoding: Option<Encoding>,
-}
-
-impl<R: AsyncRead + Unpin + Send + Sync> ReaderStream<R> {
-    fn new(reader: R, buf_size: Option<usize>, encoding: Option<Encoding>) -> Self {
-        Self {
-            reader,
-            buf_size: buf_size.unwrap_or(CHUNK_SIZE),
-            encoding,
-        }
-    }
-}
-
-impl<R: AsyncBufRead + Unpin + Send + Sync> Stream for ReaderStream<R> {
-  type Item = StreamChunk;
-  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-    let buf_size = self.buf_size;
-    let mut buf = vec![0; buf_size];
-    let this = &mut self;
-    let reader = Pin::new(&mut this.reader);
-    
-    match reader.poll_read(cx, &mut buf) {
-      Poll::Ready(Ok(0)) => Poll::Ready(None), // EOF
-      Poll::Ready(Ok(n)) => {
-        buf.truncate(dbg!(n)); // Resize to actual bytes read
-        if let Some(encoding) = this.encoding {
-          let encoded = encoding.encode(buf);
-          Poll::Ready(Some(Ok(encoded)))
-        } else {
-          Poll::Ready(Some(Ok(buf)))
-        }
-      }
-      Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
-      Poll::Pending => Poll::Pending,
-    }
-  }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Encoding {
-    SevenBit,
-    EightBit,
-    Base64,
-    QuotedPrintable,
-}
-
-impl Encoding {
-    pub fn to_str(self) -> &'static str {
-        match self {
-            Encoding::SevenBit => "7bit",
-            Encoding::EightBit => "8bit",
-            Encoding::Base64 => "base64",
-            Encoding::QuotedPrintable => "quoted-printable",
-        }
-    }
-
-    pub fn encode(self, input: Vec<u8>) -> Vec<u8> {
-        match self {
-            Encoding::Base64 => base64::engine::general_purpose::STANDARD_NO_PAD
-                .encode(input)
-                .into_bytes(),
-            Encoding::QuotedPrintable => quoted_printable::encode(&input),
-            Encoding::SevenBit | Encoding::EightBit => input,
-        }
-    }
 }

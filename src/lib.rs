@@ -50,11 +50,14 @@
 //! ```
 use http_types::{Request, Result};
 
+mod encoding;
 mod multipart;
 mod part;
+mod reader_stream;
 
+pub use encoding::Encoding;
 pub use multipart::Multipart;
-pub use part::{Encoding, Part};
+pub use part::Part;
 
 pub type StreamChunk = std::result::Result<Vec<u8>, futures_lite::io::Error>;
 

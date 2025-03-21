@@ -6,11 +6,12 @@ description = "Multipart support for `http-client`"
 license = "MIT"
 
 [dependencies]
-async-fs = "2.1.2"
 
 # Async 
 http-types = "2.12.0"
 futures-lite = "2.6.0"
+async-fs = "2.1.2"
+# async-io = "2.4.0"
 
 # Boundary generation
 fastrand = "2.3.0"

@@ -1,11 +1,7 @@
-use std::{
-    borrow::Cow,
-    io::Write,
-    path::Path,
-};
+use std::{borrow::Cow, io::Write, path::Path};
 
 use async_fs::File as AsyncFile;
-use futures_lite::{io::BufReader, AsyncBufRead, Stream, StreamExt};
+use futures_lite::{io::BufReader, AsyncBufRead, AsyncReadExt, Stream, StreamExt};
 use http_types::Body;
 use mime_guess::Mime;
 
@@ -52,6 +48,16 @@ impl<'p> Part<'p> {
         let encoding = self.encoding();
         let data = ReaderStream::new(self.data.into_reader(), buf_size, encoding);
         header_stream.chain(data)
+    }
+
+    pub(crate) fn into_reader(self) -> impl AsyncBufRead {
+        let header = self.header_bytes();
+        let header_reader = futures_lite::io::Cursor::new(header);
+        let encoding = self.encoding();
+        let buf_size = self.data.len();
+        let data_reader = self.data.into_reader();
+        let data = ReaderStream::new(data_reader, buf_size, encoding);
+        header_reader.chain(data)
     }
 
     /// Creates a new text part.
@@ -130,6 +136,12 @@ impl<'p> Part<'p> {
         ))
     }
 
+    pub(crate) fn size_hint(&self) -> Option<usize> {
+        let data_len = self.data.len()?;
+        let header_len = self.header_len();
+        Some(data_len + header_len)
+    }
+
     fn header_len(&self) -> usize {
         // Calculate the length of the headers to be written
         // Initial part: "Content-Disposition: form-data; name=\"[name]\""
@@ -199,4 +211,33 @@ fn filename(path: &Path) -> String {
 /// Returns `None` if the extension is not recognized.
 fn content_type(path: &Path) -> Option<Mime> {
     mime_guess::from_path(path).first()
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[async_std::test]
+    async fn test_stream_and_reader_same_output() {
+        let value = "This is a test value";
+        let part_for_stream = Part::text("test_field", value);
+        let part_for_reader = Part::text("test_field", value);
+
+        // Collect bytes from the stream implementation.
+        let mut stream = part_for_stream.into_stream();
+        let mut stream_output = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.expect("stream chunk error");
+            stream_output.extend(chunk);
+        }
+
+        // Collect bytes from the reader implementation.
+        let mut reader = part_for_reader.into_reader();
+        let mut reader_output = Vec::new();
+        reader
+            .read_to_end(&mut reader_output)
+            .await
+            .expect("reader error");
+
+        assert_eq!(stream_output, reader_output);
+    }
 }

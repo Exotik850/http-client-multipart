@@ -1,4 +1,5 @@
 use async_std::stream::StreamExt;
+use futures_lite::AsyncReadExt;
 use http_client_multipart::{Encoding, Multipart};
 
 #[async_std::main]
@@ -15,15 +16,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_file("file_2", "./LICENSE.md", Some(Encoding::Base64))
         .await?;
 
-    let mut stream = multipart.into_stream();
+    let mut reader = multipart.into_reader();
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        // Here you can process the chunk, e.g., write it to a file or send it over a network
-        println!("Chunk: {:?}", String::from_utf8_lossy(&chunk));
+    let mut out = String::new();
+    reader.read_to_string(&mut out).await?;
 
-        async_std::task::sleep(std::time::Duration::from_millis(100)).await; // Simulate some processing delay
-    }
+    println!("{}", out);
 
     Ok(())
 }

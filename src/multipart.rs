@@ -1,5 +1,5 @@
 use crate::{generate_boundary, part::Part, Encoding, StreamChunk};
-use futures_lite::{AsyncBufRead, Stream, StreamExt};
+use futures_lite::{AsyncBufRead, AsyncReadExt, Stream, StreamExt};
 use http_types::{Body, Request, Result};
 use std::{
     borrow::Cow,
@@ -94,13 +94,13 @@ impl<'m> Multipart<'m> {
     pub async fn set_request(self, req: &mut Request) -> Result<()> {
         let content_type = format!("multipart/form-data; boundary={}", &self.boundary);
         req.insert_header("Content-Type", content_type);
-        let body = Body::from_bytes(self.into_bytes().await?);
+        let body = self.into_body();
         req.set_body(body);
         Ok(())
     }
 
     /// Converts the multipart form to a `Body`.
-    async fn into_bytes(self) -> Result<Vec<u8>> {
+    pub async fn into_bytes(self) -> Result<Vec<u8>> {
         let mut data: Vec<u8> = Vec::new();
 
         for field in self.fields {
@@ -125,16 +125,99 @@ impl<'m> Multipart<'m> {
 
         let head_bytes = format!("--{}\r\n", self.boundary).into_bytes();
         let head_stream = futures_lite::stream::once(Ok(head_bytes.clone()));
+        let seperator = format!("\r\n--{}\r\n", self.boundary).into_bytes();
         let mut field_iter = self.fields.into_iter();
         let start = field_iter.next().unwrap().into_stream();
         let start = Box::pin(head_stream.chain(start)) as Pin<Box<dyn Stream<Item = StreamChunk>>>;
         let stream = field_iter.fold(start, |acc, field| {
-            let seperator = futures_lite::stream::once(Ok(head_bytes.clone()));
+            let seperator = futures_lite::stream::once(Ok(seperator.clone()));
             let stream = field.into_stream();
             Box::pin(acc.chain(seperator).chain(stream)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
         });
-        let tail = format!("--{}--\r\n", self.boundary).into_bytes();
+        let tail = format!("\r\n--{}--\r\n", self.boundary).into_bytes();
         let end = futures_lite::stream::once(Ok(tail));
         Box::pin(stream.chain(end)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
+    }
+
+    pub fn into_reader(self) -> impl AsyncBufRead + Send + Sync {
+        if self.fields.is_empty() {
+            return Box::pin(futures_lite::io::empty()) as Pin<Box<dyn AsyncBufRead + Send + Sync>>;
+        }
+
+        let head_bytes = format!("--{}\r\n", self.boundary).into_bytes();
+        let header_reader = futures_lite::io::Cursor::new(head_bytes.clone());
+        let seperator = format!("\r\n--{}\r\n", self.boundary).into_bytes();
+
+        let mut field_iter = self.fields.into_iter();
+        let start = field_iter.next().unwrap().into_reader();
+        let start =
+            Box::pin(header_reader.chain(start)) as Pin<Box<dyn AsyncBufRead + Send + Sync>>;
+        let reader = field_iter.fold(start, |acc, field| {
+            let seperator = futures_lite::io::Cursor::new(seperator.clone());
+            let reader = field.into_reader();
+            Box::pin(acc.chain(seperator).chain(reader)) as Pin<Box<dyn AsyncBufRead + Send + Sync>>
+        });
+        let tail = format!("\r\n--{}--\r\n", self.boundary).into_bytes();
+        let end = futures_lite::io::Cursor::new(tail);
+        Box::pin(reader.chain(end)) as Pin<Box<dyn AsyncBufRead + Send + Sync>>
+    }
+
+    fn size_hint(&self) -> Option<usize> {
+        // The first seperator is 30 + 2 + 2 = 34 bytes
+        // The last seperator is 30 + 2 + 2 + 2 + 2 = 38 bytes
+        // The seperator between fields is 30 + 2 + 2 + 2 = 36 bytes
+        // The total size is 34 + 36 * (n - 1) + 38 = 36 * n + 2
+
+        let mut size = 34;
+        for field in &self.fields {
+            size += 36;
+            size += field.size_hint()?;
+        }
+        size += 38;
+        Some(size)
+    }
+
+    fn into_body(self) -> Body {
+        let hint = self.size_hint();
+        Body::from_reader(self.into_reader(), hint)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create a Multipart with fixed boundary and sample text fields.
+    fn create_multipart<'a>() -> Multipart<'a> {
+        let mut m = Multipart::new();
+        // Override the randomly generated boundary for consistency in tests.
+        m.boundary = "test-boundary".into();
+        m.add_text("field1", "value1");
+        m.add_text("field2", "value2");
+        m
+    }
+
+    #[async_std::test]
+    async fn test_stream_and_reader_equivalence() -> Result<()> {
+        // Create two identical Multipart instances.
+        let m_stream = create_multipart();
+        let m_reader = create_multipart();
+
+        // Collect output from the stream implementation.
+        let mut stream = m_stream.into_stream();
+        let mut stream_output = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            stream_output.extend(chunk?);
+        }
+
+        // Collect output from the reader implementation.
+        let mut reader = m_reader.into_reader();
+        let mut reader_output = Vec::new();
+        reader.read_to_end(&mut reader_output).await?;
+
+        // Compare both outputs.
+        assert_eq!(stream_output, reader_output);
+
+        Ok(())
     }
 }

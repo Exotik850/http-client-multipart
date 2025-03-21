@@ -18,13 +18,15 @@ impl Encoding {
         }
     }
 
-    pub fn encode(self, input: Vec<u8>) -> Vec<u8> {
+    pub fn encode(self, input: &mut Vec<u8>) {
         match self {
-            Encoding::Base64 => base64::engine::general_purpose::STANDARD_NO_PAD
-                .encode(input)
-                .into_bytes(),
-            Encoding::QuotedPrintable => quoted_printable::encode(&input),
-            Encoding::SevenBit | Encoding::EightBit => input,
+            Encoding::Base64 => {
+                *input = base64::engine::general_purpose::STANDARD_NO_PAD
+                    .encode(&input)
+                    .into_bytes()
+            }
+            Encoding::QuotedPrintable => *input = quoted_printable::encode(&input),
+            Encoding::SevenBit | Encoding::EightBit => (),
         }
     }
 }

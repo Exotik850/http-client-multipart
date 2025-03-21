@@ -20,7 +20,7 @@
 //! multipart.add_text("name", "John Doe");
 //!
 //! // Add a file.
-//! multipart.add_file("avatar", "examples/avatar.jpg").await?;
+//! multipart.add_file("avatar", "examples/avatar.jpg", None).await?;
 //!
 //! // Create a request.
 //! let url = "https://httpbin.org/post".parse::<Url>()?;

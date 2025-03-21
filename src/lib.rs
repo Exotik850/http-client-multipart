@@ -54,7 +54,7 @@ mod multipart;
 mod part;
 
 pub use multipart::Multipart;
-pub use part::{ContentTransferEncoding, Part};
+pub use part::{Encoding, Part};
 
 pub type StreamChunk = std::result::Result<Vec<u8>, futures_lite::io::Error>;
 

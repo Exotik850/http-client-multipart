@@ -1,6 +1,6 @@
 use crate::{
     generate_boundary,
-    part::{ContentTransferEncoding, Part},
+    part::{Encoding, Part},
     StreamChunk,
 };
 use futures_lite::{AsyncBufRead, Stream, StreamExt};
@@ -44,7 +44,7 @@ impl<'m> Multipart<'m> {
         &mut self,
         name: impl Into<Cow<'m, str>>,
         path: impl AsRef<Path>,
-        encoding: Option<ContentTransferEncoding>,
+        encoding: Option<Encoding>,
     ) -> Result<()> {
         let part = Part::file_async(name, path, encoding).await?;
         self.fields.push(part);
@@ -56,18 +56,18 @@ impl<'m> Multipart<'m> {
         &mut self,
         name: impl Into<Cow<'m, str>>,
         filename: impl Into<Cow<'m, str>>,
-        content_type: Mime,
-        encoding: Option<ContentTransferEncoding>,
+        content_type: &str,
+        encoding: Option<Encoding>,
         data: impl AsyncBufRead + Unpin + Send + Sync + 'static,
-        buf_len: Option<usize>,
+        data_len: Option<usize>, // optional length for the async reader, if known
     ) -> Result<()> {
         self.fields.push(Part::file_raw_async(
             name,
             filename,
-            content_type,
+            content_type.parse()?,
             encoding,
             data,
-            buf_len,
+            data_len,
         ));
         Ok(())
     }
@@ -81,15 +81,20 @@ impl<'m> Multipart<'m> {
         &mut self,
         name: impl Into<Cow<'m, str>>,
         filename: impl Into<Cow<'m, str>>,
-        content_type: Mime,
-        encoding: Option<ContentTransferEncoding>,
+        content_type: &str,
+        encoding: Option<Encoding>,
         mut data: impl Read + Seek + Send + 'static,
     ) -> Result<()> {
         let mut buffer = Vec::new();
         data.read_to_end(&mut buffer)?;
         let body = Body::from(buffer);
-        self.fields
-            .push(Part::file_raw(name, filename, content_type, encoding, body));
+        self.fields.push(Part::file_raw(
+            name,
+            filename,
+            content_type.parse()?,
+            encoding,
+            body,
+        ));
         Ok(())
     }
 
@@ -121,48 +126,23 @@ impl<'m> Multipart<'m> {
 
     pub fn into_stream(self) -> impl Stream<Item = StreamChunk> {
         if self.fields.is_empty() {
-            let out: Pin<Box<dyn Stream<Item = StreamChunk>>> =
+            let empty_stream: Pin<Box<dyn Stream<Item = StreamChunk>>> =
                 Box::pin(futures_lite::stream::empty());
-            return out;
+            return empty_stream;
         }
-        let head = format!("--{}\r\n", self.boundary).into_bytes();
-        let head = futures_lite::stream::once(Ok(head));
+
+        let head_bytes = format!("--{}\r\n", self.boundary).into_bytes();
+        let head_stream = futures_lite::stream::once(Ok(head_bytes.clone()));
         let mut field_iter = self.fields.into_iter();
         let start = field_iter.next().unwrap().into_stream();
-        let start = Box::pin(head.chain(start)) as Pin<Box<dyn Stream<Item = StreamChunk>>>;
+        let start = Box::pin(head_stream.chain(start)) as Pin<Box<dyn Stream<Item = StreamChunk>>>;
         let stream = field_iter.fold(start, |acc, field| {
+            let seperator = futures_lite::stream::once(Ok(head_bytes.clone()));
             let stream = field.into_stream();
-            Box::pin(acc.chain(stream)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
+            Box::pin(acc.chain(seperator).chain(stream)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
         });
-        let closer = format!("--{}--\r\n", self.boundary).into_bytes();
-        let end = futures_lite::stream::once(Ok(closer));
+        let tail = format!("--{}--\r\n", self.boundary).into_bytes();
+        let end = futures_lite::stream::once(Ok(tail));
         Box::pin(stream.chain(end)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
     }
-}
-
-fn generate_header_info(
-    data: &mut Vec<u8>,
-    name: Cow<'_, str>,
-    filename: Cow<'_, str>,
-    content_type: Cow<'_, str>,
-    encoding: Option<ContentTransferEncoding>,
-) {
-    let headers = [
-        format!(
-            "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n",
-            name, filename
-        ),
-        format!("Content-Type: {}\r\n", content_type),
-        encoding.map_or(String::new(), |enc| {
-            format!("Content-Transfer-Encoding: {}\r\n", enc.to_str())
-        }),
-    ];
-
-    for header in headers {
-        if !header.is_empty() {
-            data.extend_from_slice(header.as_bytes());
-        }
-    }
-
-    data.extend_from_slice(b"\r\n");
 }

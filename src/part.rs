@@ -12,7 +12,7 @@ use crate::{reader_stream::ReaderStream, Encoding, StreamChunk};
 pub(crate) struct Part<'p> {
     name: Cow<'p, str>,
     data: Body,
-    content_type: Mime,
+    pub(crate) content_type: Mime,
     file_data: Option<FileData<'p>>,
 }
 

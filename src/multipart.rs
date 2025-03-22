@@ -35,6 +35,21 @@ impl<'m> Multipart<'m> {
         self.fields.push(Part::text(name, value.as_ref()));
     }
 
+    /// Adds a text field to the form with a custom mime type.
+    ///
+    /// Returns an error if the mime type is invalid.
+    pub fn add_text_mime(
+        &mut self,
+        name: impl Into<Cow<'m, str>>,
+        value: impl AsRef<str>,
+        mime: &str,
+    ) -> Result<()> {
+        let mut part = Part::text(name, value.as_ref());
+        part.content_type = mime.parse()?;
+        self.fields.push(part);
+        Ok(())
+    }
+
     /// Adds a file field to the form from path.
     pub async fn add_file(
         &mut self,
@@ -94,6 +109,11 @@ impl<'m> Multipart<'m> {
     pub async fn set_request(self, req: &mut Request) -> Result<()> {
         let content_type = format!("multipart/form-data; boundary={}", &self.boundary);
         req.insert_header("Content-Type", content_type);
+
+        if let Some(size) = self.size_hint() {
+            req.insert_header("Content-Length", size.to_string());
+        }
+
         let body = self.into_body();
         req.set_body(body);
         Ok(())

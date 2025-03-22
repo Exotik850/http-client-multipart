@@ -27,7 +27,7 @@
 //! let mut req = Request::new(Method::Post, url);
 //!
 //! // Set the multipart body.
-//! multipart.set_request(&mut req).await?;
+//! multipart.set_request(&mut req);
 //!
 //! // Create a client.
 //! # #[cfg(any(feature = "h1_client", feature = "docs"))]
@@ -48,7 +48,7 @@
 //! # Ok(())
 //! # }
 //! ```
-use http_types::{Request, Result};
+use http_types::Request;
 
 mod encoding;
 mod multipart;
@@ -67,17 +67,11 @@ fn generate_boundary() -> String {
 
 // Extension trait for adding multipart functionality.
 pub trait RequestMultipartExt {
-    fn set_multipart_body(
-        &mut self,
-        multipart: Multipart,
-    ) -> impl std::future::Future<Output = Result<()>>;
+    fn multipart(&mut self, multipart: Multipart);
 }
 
 impl RequestMultipartExt for Request {
-    fn set_multipart_body(
-        &mut self,
-        multipart: Multipart,
-    ) -> impl std::future::Future<Output = Result<()>> {
+    fn multipart(&mut self, multipart: Multipart) {
         multipart.set_request(self)
     }
 }
@@ -87,7 +81,7 @@ mod tests {
     use crate::multipart::Multipart;
 
     use super::*;
-    use http_types::{Method, Url};
+    use http_types::{Method, Result, Url};
 
     #[async_std::test]
     async fn test_multipart_text() -> Result<()> {
@@ -96,7 +90,7 @@ mod tests {
         multipart.add_text("age", "42");
 
         let mut req = Request::new(Method::Post, Url::parse("http://example.com")?);
-        multipart.set_request(&mut req).await?;
+        multipart.set_request(&mut req);
 
         let content_type = req.header("Content-Type").unwrap().last().as_str();
         assert!(content_type.starts_with("multipart/form-data; boundary="));
@@ -113,7 +107,7 @@ mod tests {
         multipart.add_file("avatar", "Cargo.toml", None).await?;
 
         let mut req = Request::new(Method::Post, Url::parse("http://example.com")?);
-        multipart.set_request(&mut req).await?;
+        multipart.set_request(&mut req);
 
         let content_type = req.header("Content-Type").unwrap().last().as_str();
         assert!(content_type.starts_with("multipart/form-data; boundary="));
@@ -130,7 +124,7 @@ mod tests {
         multipart.add_file("avatar", "Cargo.toml", None).await?;
 
         let mut req = Request::new(Method::Post, Url::parse("http://example.com")?);
-        multipart.set_request(&mut req).await?;
+        multipart.set_request(&mut req);
 
         let content_type = req.header("Content-Type").unwrap().last().as_str();
         assert!(content_type.starts_with("multipart/form-data; boundary="));
@@ -160,7 +154,7 @@ mod tests {
         let mut req = Request::new(Method::Post, url);
 
         // Set the multipart body.
-        multipart.set_request(&mut req).await?;
+        multipart.set_request(&mut req);
 
         // Create a client.
         let client = Client::new();

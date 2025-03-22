@@ -91,12 +91,11 @@ impl<'m> Multipart<'m> {
     }
 
     /// Sets the request body to the multipart form data.
-    pub async fn set_request(self, req: &mut Request) -> Result<()> {
+    pub fn set_request(self, req: &mut Request) {
         let content_type = format!("multipart/form-data; boundary={}", &self.boundary);
         req.insert_header("Content-Type", content_type);
-        let body = self.into_body();
+        let body = self.into_body(None);
         req.set_body(body);
-        Ok(())
     }
 
     /// Converts the multipart form to a `Body`.
@@ -116,7 +115,7 @@ impl<'m> Multipart<'m> {
         Ok(data)
     }
 
-    pub fn into_stream(self) -> impl Stream<Item = StreamChunk> {
+    pub fn into_stream(self, buf_size: Option<usize>) -> impl Stream<Item = StreamChunk> {
         if self.fields.is_empty() {
             let empty_stream: Pin<Box<dyn Stream<Item = StreamChunk>>> =
                 Box::pin(futures_lite::stream::empty());
@@ -127,11 +126,11 @@ impl<'m> Multipart<'m> {
         let head_stream = futures_lite::stream::once(Ok(head_bytes.clone()));
         let seperator = format!("\r\n--{}\r\n", self.boundary).into_bytes();
         let mut field_iter = self.fields.into_iter();
-        let start = field_iter.next().unwrap().into_stream();
+        let start = field_iter.next().unwrap().into_stream(buf_size);
         let start = Box::pin(head_stream.chain(start)) as Pin<Box<dyn Stream<Item = StreamChunk>>>;
         let stream = field_iter.fold(start, |acc, field| {
             let seperator = futures_lite::stream::once(Ok(seperator.clone()));
-            let stream = field.into_stream();
+            let stream = field.into_stream(buf_size);
             Box::pin(acc.chain(seperator).chain(stream)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
         });
         let tail = format!("\r\n--{}--\r\n", self.boundary).into_bytes();
@@ -139,7 +138,7 @@ impl<'m> Multipart<'m> {
         Box::pin(stream.chain(end)) as Pin<Box<dyn Stream<Item = StreamChunk>>>
     }
 
-    pub fn into_reader(self) -> impl AsyncBufRead + Send + Sync {
+    pub fn into_reader(self, buf_size: Option<usize>) -> impl AsyncBufRead + Send + Sync {
         if self.fields.is_empty() {
             return Box::pin(futures_lite::io::empty()) as Pin<Box<dyn AsyncBufRead + Send + Sync>>;
         }
@@ -149,12 +148,12 @@ impl<'m> Multipart<'m> {
         let seperator = format!("\r\n--{}\r\n", self.boundary).into_bytes();
 
         let mut field_iter = self.fields.into_iter();
-        let start = field_iter.next().unwrap().into_reader();
+        let start = field_iter.next().unwrap().into_reader(buf_size);
         let start =
             Box::pin(header_reader.chain(start)) as Pin<Box<dyn AsyncBufRead + Send + Sync>>;
         let reader = field_iter.fold(start, |acc, field| {
             let seperator = futures_lite::io::Cursor::new(seperator.clone());
-            let reader = field.into_reader();
+            let reader = field.into_reader(buf_size);
             Box::pin(acc.chain(seperator).chain(reader)) as Pin<Box<dyn AsyncBufRead + Send + Sync>>
         });
         let tail = format!("\r\n--{}--\r\n", self.boundary).into_bytes();
@@ -177,9 +176,9 @@ impl<'m> Multipart<'m> {
         Some(size)
     }
 
-    fn into_body(self) -> Body {
+    fn into_body(self, buf_size: Option<usize>) -> Body {
         let hint = self.size_hint();
-        Body::from_reader(self.into_reader(), hint)
+        Body::from_reader(self.into_reader(buf_size), hint)
     }
 }
 
@@ -204,14 +203,14 @@ mod tests {
         let m_reader = create_multipart();
 
         // Collect output from the stream implementation.
-        let mut stream = m_stream.into_stream();
+        let mut stream = m_stream.into_stream(Some(8));
         let mut stream_output = Vec::new();
         while let Some(chunk) = stream.next().await {
             stream_output.extend(chunk?);
         }
 
         // Collect output from the reader implementation.
-        let mut reader = m_reader.into_reader();
+        let mut reader = m_reader.into_reader(Some(8));
         let mut reader_output = Vec::new();
         reader.read_to_end(&mut reader_output).await?;
 

@@ -1,6 +1,6 @@
 [package]
 name = "http-client-multipart"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Multipart support for `http-client`"
 license = "MIT"
@@ -8,19 +8,27 @@ license = "MIT"
 [dependencies]
 
 # Async 
-http-types = "2.12.0"
-futures-lite = "2.6.0"
-async-fs = "2.1.2"
+http-types = "2"
+futures-lite = "2"
+async-fs = "2"
 # async-io = "2.4.0"
 
 # Boundary generation
-fastrand = "2.3.0"
+fastrand = "2"
 
 # Encodings
-base64 = "0.22.1"
-quoted_printable = "0.5.1"
-mime_guess = "2.0.5"
+base64 = "0.22"
+quoted_printable = "0.5"
+mime_guess = "2.0"
 
 [dev-dependencies]
 async-std = { version = "1.13.1", default-features = false, features = ["attributes"] }
 http-client = { version = "6.5.3", features = ["h1_client"] }
+
+
+[profile.dev]
+opt-level = 1
+debug = 1
+
+[profile.dev.package."*"]
+debug = false

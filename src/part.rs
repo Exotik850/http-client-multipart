@@ -41,20 +41,20 @@ impl<'p> Part<'p> {
     /// This also streams text values as bytes.
     ///
     /// Remember to place the boundary between parts when using this stream.
-    pub(crate) fn into_stream(self) -> impl Stream<Item = StreamChunk> {
+    pub(crate) fn into_stream(self, buf_size: Option<usize>) -> impl Stream<Item = StreamChunk> {
         let header = self.header_bytes();
         let header_stream = futures_lite::stream::once(Ok(header));
-        let buf_size = self.data.len();
+        let buf_size = buf_size.or(self.data.len());
         let encoding = self.encoding();
         let data = ReaderStream::new(self.data.into_reader(), buf_size, encoding);
         header_stream.chain(data)
     }
 
-    pub(crate) fn into_reader(self) -> impl AsyncBufRead {
+    pub(crate) fn into_reader(self, buf_size: Option<usize>) -> impl AsyncBufRead {
         let header = self.header_bytes();
         let header_reader = futures_lite::io::Cursor::new(header);
         let encoding = self.encoding();
-        let buf_size = self.data.len();
+        let buf_size = buf_size.or(self.data.len());
         let data_reader = self.data.into_reader();
         let data = ReaderStream::new(data_reader, buf_size, encoding);
         header_reader.chain(data)
@@ -191,7 +191,7 @@ impl<'p> Part<'p> {
     /// Extends the data of the part into a buffer.
     pub(crate) async fn extend(self, mut data: &mut [u8]) -> Result<(), futures_lite::io::Error> {
         self.write_header(&mut data)?;
-        let mut stream = self.into_stream();
+        let mut stream = self.into_stream(None);
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
             data.write_all(&chunk)?;
@@ -224,7 +224,7 @@ mod tests {
         let part_for_reader = Part::text("test_field", value);
 
         // Collect bytes from the stream implementation.
-        let mut stream = part_for_stream.into_stream();
+        let mut stream = part_for_stream.into_stream(Some(8));
         let mut stream_output = Vec::new();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.expect("stream chunk error");
@@ -232,7 +232,7 @@ mod tests {
         }
 
         // Collect bytes from the reader implementation.
-        let mut reader = part_for_reader.into_reader();
+        let mut reader = part_for_reader.into_reader(Some(8));
         let mut reader_output = Vec::new();
         reader
             .read_to_end(&mut reader_output)

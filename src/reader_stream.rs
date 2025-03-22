@@ -7,7 +7,7 @@ use futures_lite::{AsyncBufRead, AsyncRead, Stream};
 
 use crate::{Encoding, StreamChunk};
 
-const CHUNK_SIZE: usize = 2048;
+const CHUNK_SIZE: usize = 256;
 
 pub(crate) struct ReaderStream<R> {
     reader: R,
@@ -16,11 +16,24 @@ pub(crate) struct ReaderStream<R> {
     encoding: Option<Encoding>,
 }
 
+pub fn nearest_multiple_of(n: usize, multiple: usize) -> usize {
+    if n % multiple == 0 {
+        n
+    } else {
+        (n / multiple + 1) * multiple
+    }
+}
+
 impl<R: AsyncBufRead + Unpin + Send + Sync> ReaderStream<R> {
     pub(crate) fn new(reader: R, buf_size: Option<usize>, encoding: Option<Encoding>) -> Self {
+        let mut buf_size = buf_size.unwrap_or(CHUNK_SIZE);
+        if let Some(Encoding::Base64) = encoding {
+            // Base64 encoding requires a buffer size that is a multiple of 3
+            buf_size = nearest_multiple_of(buf_size, 3);
+        }
         Self {
             reader,
-            buf_size: buf_size.unwrap_or(CHUNK_SIZE),
+            buf_size,
             encoding,
             buf_buffer: None,
         }
@@ -109,7 +122,7 @@ impl<R: AsyncBufRead + Unpin + Send + Sync> AsyncBufRead for ReaderStream<R> {
                 buf.truncate(n);
                 let encoding = this.encoding.unwrap();
                 encoding.encode(buf);
-                Poll::Ready(Ok(&this.buf_buffer.as_ref().unwrap()))
+                Poll::Ready(Ok(this.buf_buffer.as_ref().unwrap()))
             }
             Poll::Ready(Err(e)) => Poll::Ready(Err(e)),
             Poll::Pending => Poll::Pending,

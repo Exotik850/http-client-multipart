@@ -125,6 +125,7 @@ impl<'p> Part<'p> {
         let content_type =
             content_type(path).unwrap_or_else(|| "application/octet-stream".parse().unwrap());
         let file = AsyncFile::open(path).await?;
+        let data_len = file.metadata().await?.len() as usize;
         let buf_reader = BufReader::new(file);
         Ok(Part::file_raw_async(
             name,
@@ -132,7 +133,7 @@ impl<'p> Part<'p> {
             content_type,
             encoding,
             buf_reader,
-            None,
+            Some(data_len),
         ))
     }
 

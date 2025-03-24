@@ -13,12 +13,7 @@ pub(crate) struct Part<'p> {
     name: Cow<'p, str>,
     data: Body,
     pub(crate) content_type: Mime,
-    file_data: Option<FileData<'p>>,
-}
-
-#[derive(Debug)]
-struct FileData<'p> {
-    filename: Cow<'p, str>,
+    file_data: Option<Cow<'p, str>>,
     encoding: Option<Encoding>,
 }
 
@@ -26,13 +21,13 @@ impl<'p> Part<'p> {
     /// Returns the filename of the part.
     /// Only applicable to file parts.
     pub(crate) fn filename(&self) -> Option<&str> {
-        self.file_data.as_ref().map(|data| data.filename.as_ref())
+        self.file_data.as_deref()
     }
 
     /// Returns the encoding of the part.
     /// Only applicable to file parts.
     pub(crate) fn encoding(&self) -> Option<Encoding> {
-        self.file_data.as_ref().and_then(|data| data.encoding)
+        self.encoding
     }
 
     /// Returns the data of the part as a stream.
@@ -61,11 +56,12 @@ impl<'p> Part<'p> {
     }
 
     /// Creates a new text part.
-    pub(crate) fn text(name: impl Into<Cow<'p, str>>, value: &str) -> Self {
+    pub(crate) fn text(name: impl Into<Cow<'p, str>>, value: &str, encoding: Option<Encoding>) -> Self {
         Part {
             name: name.into(),
             data: Body::from(value),
             content_type: "text/plain".parse().unwrap(),
+            encoding,
             file_data: None,
         }
     }
@@ -82,10 +78,8 @@ impl<'p> Part<'p> {
             name: name.into(),
             data,
             content_type,
-            file_data: Some(FileData {
-                filename: filename.into(),
-                encoding,
-            }),
+            encoding,
+            file_data: Some(filename.into()),
         }
     }
 
@@ -102,10 +96,8 @@ impl<'p> Part<'p> {
             name: name.into(),
             content_type,
             data: Body::from_reader(data, data_len),
-            file_data: Some(FileData {
-                filename: filename.into(),
-                encoding,
-            }),
+            encoding,
+            file_data: Some(filename.into()),
         }
     }
 
@@ -220,8 +212,8 @@ mod tests {
     #[async_std::test]
     async fn test_stream_and_reader_same_output() {
         let value = "This is a test value";
-        let part_for_stream = Part::text("test_field", value);
-        let part_for_reader = Part::text("test_field", value);
+        let part_for_stream = Part::text("test_field", value, None);
+        let part_for_reader = Part::text("test_field", value, None);
 
         // Collect bytes from the stream implementation.
         let mut stream = part_for_stream.into_stream(Some(8));

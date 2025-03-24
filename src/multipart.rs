@@ -32,7 +32,17 @@ impl<'m> Multipart<'m> {
 
     /// Adds a text field to the form.
     pub fn add_text(&mut self, name: impl Into<Cow<'m, str>>, value: impl AsRef<str>) {
-        self.fields.push(Part::text(name, value.as_ref()));
+        self.fields.push(Part::text(name, value.as_ref(), None));
+    }
+
+    pub fn add_enc_text(
+        &mut self,
+        name: impl Into<Cow<'m, str>>,
+        value: impl AsRef<str>,
+        encoding: Encoding,
+    ) {
+        self.fields
+            .push(Part::text(name, value.as_ref(), Some(encoding)));
     }
 
     /// Adds a text field to the form with a custom mime type.
@@ -44,7 +54,20 @@ impl<'m> Multipart<'m> {
         value: impl AsRef<str>,
         mime: &str,
     ) -> Result<()> {
-        let mut part = Part::text(name, value.as_ref());
+        let mut part = Part::text(name, value.as_ref(), None);
+        part.content_type = mime.parse()?;
+        self.fields.push(part);
+        Ok(())
+    }
+
+    pub fn add_enc_text_mime(
+        &mut self,
+        name: impl Into<Cow<'m, str>>,
+        value: impl AsRef<str>,
+        mime: &str,
+        encoding: Encoding,
+    ) -> Result<()> {
+        let mut part = Part::text(name, value.as_ref(), Some(encoding));
         part.content_type = mime.parse()?;
         self.fields.push(part);
         Ok(())
@@ -113,7 +136,7 @@ impl<'m> Multipart<'m> {
         if let Some(size) = self.size_hint() {
             req.insert_header("Content-Length", size.to_string());
         }
-        
+
         let body = self.into_body(None);
         req.set_body(body);
     }

@@ -56,10 +56,10 @@ impl<'p> Part<'p> {
     }
 
     /// Creates a new text part.
-    pub(crate) fn text(name: impl Into<Cow<'p, str>>, value: &str, encoding: Option<Encoding>) -> Self {
+    pub(crate) fn text(name: impl Into<Cow<'p, str>>, value: impl AsRef<[u8]>, encoding: Option<Encoding>) -> Self {
         Part {
             name: name.into(),
-            data: Body::from(value),
+            data: Body::from(value.as_ref()),
             content_type: "text/plain".parse().unwrap(),
             encoding,
             file_data: None,
@@ -72,11 +72,11 @@ impl<'p> Part<'p> {
         filename: impl Into<Cow<'p, str>>,
         content_type: Mime,
         encoding: Option<Encoding>,
-        data: Body,
+        data: impl Into<Body>,
     ) -> Self {
         Part {
             name: name.into(),
-            data,
+            data: data.into(),
             content_type,
             encoding,
             file_data: Some(filename.into()),
@@ -181,12 +181,12 @@ impl<'p> Part<'p> {
     }
 
     /// Extends the data of the part into a buffer.
-    pub(crate) async fn extend(self, mut data: &mut [u8]) -> Result<(), futures_lite::io::Error> {
+    pub(crate) async fn extend(self, mut data: &mut Vec<u8>) -> Result<(), futures_lite::io::Error> {
         self.write_header(&mut data)?;
         let mut stream = self.into_stream(None);
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
-            data.write_all(&chunk)?;
+            data.extend_from_slice(&chunk);
         }
         Ok(())
     }
@@ -205,6 +205,7 @@ fn filename(path: &Path) -> String {
 fn content_type(path: &Path) -> Option<Mime> {
     mime_guess::from_path(path).first()
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,4 +234,6 @@ mod tests {
 
         assert_eq!(stream_output, reader_output);
     }
+
+
 }

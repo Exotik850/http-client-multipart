@@ -60,15 +60,16 @@ impl<'m> Multipart<'m> {
         Ok(())
     }
 
-    pub fn add_enc_text_mime(
+    pub fn add_file_bytes(
         &mut self,
         name: impl Into<Cow<'m, str>>,
-        value: impl AsRef<str>,
+        filename: impl Into<Cow<'m, str>>,
+        value: impl AsRef<[u8]>,
         mime: &str,
-        encoding: Encoding,
+        encoding: Option<Encoding>,
     ) -> Result<()> {
-        let mut part = Part::text(name, value.as_ref(), Some(encoding));
-        part.content_type = mime.parse()?;
+        let content_type = mime.parse()?;
+        let part = Part::file_raw(name, filename, content_type, encoding, value.as_ref());
         self.fields.push(part);
         Ok(())
     }
@@ -259,6 +260,50 @@ mod tests {
 
         // Compare both outputs.
         assert_eq!(stream_output, reader_output);
+
+        Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_file_and_text_equivalence() -> Result<()> {
+        // The content to write to the file.
+        let content = "Hello, world!";
+
+        // Create a temporary file and write the content into it.
+        let file_path = "./examples/file.txt";
+
+        // Create a Multipart instance by loading the file using base64 encoding.
+        let mut m_file = Multipart::new();
+        // Override the boundary for consistency in tests.
+        m_file.boundary = "test-boundary".into();
+        m_file
+            .add_file("filefield", file_path, Some(Encoding::Base64))
+            .await
+            .unwrap();
+
+        // Create a Multipart instance by preloading the file content as text,
+        // setting a custom mime ('text/plain') and using base64 encoding.
+        let mut m_text = Multipart::new();
+        m_text.boundary = "test-boundary".into();
+        m_text
+            .add_file_bytes(
+                "filefield",
+                "file.txt",
+                content,
+                "text/plain",
+                Some(Encoding::Base64),
+            )
+            .unwrap();
+
+        // Convert both multipart forms to bytes.
+        let bytes_file = m_file.into_bytes().await.unwrap();
+        let bytes_text = m_text.into_bytes().await.unwrap();
+
+        // Assert that both outputs are identical.
+        assert_eq!(
+            String::from_utf8_lossy(&bytes_file),
+            String::from_utf8_lossy(&bytes_text)
+        );
 
         Ok(())
     }

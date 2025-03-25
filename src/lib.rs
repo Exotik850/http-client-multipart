@@ -135,39 +135,39 @@ mod tests {
         Ok(())
     }
 
-    #[async_std::test]
-    async fn example_test() -> Result<()> {
-        use http_client::h1::H1Client as Client;
-        use http_client::HttpClient;
+    // #[async_std::test]
+    // async fn example_test() -> Result<()> {
+    //     use http_client::h1::H1Client as Client;
+    //     use http_client::HttpClient;
 
-        // Create a new multipart form.
-        let mut multipart = Multipart::new();
+    //     // Create a new multipart form.
+    //     let mut multipart = Multipart::new();
 
-        // Add a text field.
-        multipart.add_text("name", "John Doe");
+    //     // Add a text field.
+    //     multipart.add_text("name", "John Doe");
 
-        // Add a file.
-        multipart.add_file("avatar", "Cargo.toml", None).await?;
+    //     // Add a file.
+    //     multipart.add_file("avatar", "Cargo.toml", None).await?;
 
-        // Create a request.
-        let url = "https://httpbin.org/post".parse::<Url>()?;
-        let mut req = Request::new(Method::Post, url);
+    //     // Create a request.
+    //     let url = "https://httpbin.org/post".parse::<Url>()?;
+    //     let mut req = Request::new(Method::Post, url);
 
-        // Set the multipart body.
-        multipart.set_request(&mut req);
+    //     // Set the multipart body.
+    //     multipart.set_request(&mut req);
 
-        // Create a client.
-        let client = Client::new();
+    //     // Create a client.
+    //     let client = Client::new();
 
-        // Send the request.
-        let mut response = client.send(req).await?;
+    //     // Send the request.
+    //     let mut response = client.send(req).await?;
 
-        // Read the response body.
-        let body = response.body_string().await?;
+    //     // Read the response body.
+    //     let body = response.body_string().await?;
 
-        // Print the response body.
-        println!("{}", body);
+    //     // Print the response body.
+    //     println!("{}", body);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 }

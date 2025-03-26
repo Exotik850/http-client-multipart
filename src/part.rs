@@ -1,6 +1,7 @@
 use std::{borrow::Cow, io::Write, path::Path};
 
 use async_fs::File as AsyncFile;
+use base64::Engine;
 use futures_lite::{io::BufReader, AsyncBufRead, AsyncReadExt, Stream, StreamExt};
 use http_types::Body;
 use mime_guess::Mime;
@@ -56,7 +57,11 @@ impl<'p> Part<'p> {
     }
 
     /// Creates a new text part.
-    pub(crate) fn text(name: impl Into<Cow<'p, str>>, value: impl AsRef<[u8]>, encoding: Option<Encoding>) -> Self {
+    pub(crate) fn text(
+        name: impl Into<Cow<'p, str>>,
+        value: impl AsRef<[u8]>,
+        encoding: Option<Encoding>,
+    ) -> Self {
         Part {
             name: name.into(),
             data: Body::from(value.as_ref()),
@@ -117,7 +122,11 @@ impl<'p> Part<'p> {
         let content_type =
             content_type(path).unwrap_or_else(|| "application/octet-stream".parse().unwrap());
         let file = AsyncFile::open(path).await?;
-        let data_len = file.metadata().await?.len() as usize;
+        let mut data_len = file.metadata().await?.len() as usize;
+        if let Some(Encoding::Base64) = encoding {
+            // Base64 encoding increases the size of the data
+            data_len = (data_len * 4 + 2) / 3; // Rough estimate for base64 size
+        }
         let buf_reader = BufReader::new(file);
         Ok(Part::file_raw_async(
             name,
@@ -130,15 +139,18 @@ impl<'p> Part<'p> {
     }
 
     pub(crate) fn size_hint(&self) -> Option<usize> {
-        let data_len = self.data.len()?;
+        let mut data_len = self.data.len()?;
+        if let Some(Encoding::Base64) = self.encoding {
+            data_len *= 4 / 3;
+        }
         let header_len = self.header_len();
-        Some(data_len + header_len)
+        Some((data_len + header_len))
     }
 
     fn header_len(&self) -> usize {
         // Calculate the length of the headers to be written
         // Initial part: "Content-Disposition: form-data; name=\"[name]\""
-        let mut len = 41 + self.name.len(); // 41 = "Content-Disposition: form-data; name=\"\"".len()
+        let mut len = 39 + self.name.len(); // 41 = "Content-Disposition: form-data; name=\"\"".len()
         if let Some(filename) = self.filename() {
             // Add "; filename=\"[filename]\"" if this is a file part
             len += 15 + filename.len(); // 15 = "; filename=\"\"".len()
@@ -181,11 +193,21 @@ impl<'p> Part<'p> {
     }
 
     /// Extends the data of the part into a buffer.
-    pub(crate) async fn extend(self, mut data: &mut Vec<u8>) -> Result<(), futures_lite::io::Error> {
+    pub(crate) async fn extend(
+        self,
+        mut data: &mut Vec<u8>,
+    ) -> Result<(), futures_lite::io::Error> {
         self.write_header(&mut data)?;
+        let encoding = self.encoding;
         let mut stream = self.into_stream(None);
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
+            if let Some(Encoding::Base64) = encoding {
+                // Encode if necessary (base64 encoding)
+                let encoded_chunk = base64::engine::general_purpose::STANDARD.encode(&chunk);
+                data.extend_from_slice(encoded_chunk.as_bytes());
+                continue;
+            }
             data.extend_from_slice(&chunk);
         }
         Ok(())
@@ -235,5 +257,21 @@ mod tests {
         assert_eq!(stream_output, reader_output);
     }
 
+    #[async_std::test]
+    async fn test_part_size_hint_no_encoding() {
+        let part = Part::text("field", "Hello world!", None);
+        let expected_size = part.size_hint().unwrap();
+        let mut buf = Vec::new();
+        part.extend(&mut buf).await.expect("extend failed");
+        assert_eq!(expected_size, buf.len());
+    }
 
+    #[async_std::test]
+    async fn test_part_size_hint_base64_encoding() {
+        let part = Part::text("field_base64", "Hello world!", Some(Encoding::Base64));
+        let expected_size = part.size_hint().unwrap();
+        let mut buf = Vec::new();
+        part.extend(&mut buf).await.expect("extend failed");
+        assert_eq!(expected_size, buf.len());
+    }
 }

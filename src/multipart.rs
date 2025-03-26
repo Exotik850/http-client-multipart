@@ -136,10 +136,29 @@ impl<'m> Multipart<'m> {
 
         if let Some(size) = self.size_hint() {
             req.insert_header("Content-Length", size.to_string());
+        } else {
+            // If size not known, unset Content-Length header
+            req.remove_header("Content-Length");
         }
 
         let body = self.into_body(None);
         req.set_body(body);
+    }
+
+    pub async fn set_request_bytes(self, req: &mut Request) -> Result<()> {
+        let content_type = format!("multipart/form-data; boundary={}", &self.boundary);
+        req.insert_header("Content-Type", content_type);
+
+        if let Some(size) = self.size_hint() {
+            req.insert_header("Content-Length", size.to_string());
+        } else {
+            // If size not known, unset Content-Length header
+            req.remove_header("Content-Length");
+        }
+
+        let body = self.into_body_bytes().await?;
+        req.set_body(body);
+        Ok(())
     }
 
     /// Converts the multipart form to a `Body`.
@@ -216,13 +235,17 @@ impl<'m> Multipart<'m> {
             size += 36;
             size += field.size_hint()?;
         }
-        size += 38;
-        Some(size)
+        Some(size + 38)
     }
 
     fn into_body(self, buf_size: Option<usize>) -> Body {
         let hint = self.size_hint();
         Body::from_reader(self.into_reader(buf_size), hint)
+    }
+
+    async fn into_body_bytes(self) -> Result<Body> {
+        let bytes = self.into_bytes().await?;
+        Ok(Body::from(bytes))
     }
 }
 
@@ -306,5 +329,17 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[async_std::test]
+    async fn test_multipart_size_hint() {
+        // Hypothetical usage, depending on your actual Multipart API.
+        let mut multipart = Multipart::new();
+        multipart.boundary = "test-boundary".into();
+        multipart.add_text("field", "Hello multipart!");
+        let expected_size = multipart.size_hint().unwrap();
+
+        let buf = multipart.into_bytes().await.unwrap();
+        assert_eq!(expected_size, buf.len());
     }
 }
